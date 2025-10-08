@@ -29,7 +29,7 @@ def toggle_direction(channel = None):
 		print("Direction: reverse")
 	else:
 		direction + 1
-		print(Direction:"forward")
+		print("Direction:forward")
 
 toggle_direction()
 
