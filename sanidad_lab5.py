@@ -8,18 +8,18 @@ PWM_base = 500
 wave_f = 0.2
 PHI = math.pi / 11.0
 
-GPiO.setwarnings(False)
-GPiO.setmode(GPiO.BCM)
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BCM)
 
 pwms = []
 
 for pin in led_pins:
-	GPiO.setup(pin, GPiO.OUT)
-	p = GPiO.PWM(pin, PWM_base)
+	GPIO.setup(pin, GPIO.OUT)
+	p = GPIO.PWM(pin, PWM_base)
 	p.start(0)
 	pwms.append(p)
 
-GPiO.setup(button_pin, GPiO.IN, pull_up_down=GPiO.PUD_DOWN)
+GPIO.setup(button_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 direction = 1
 def toggle_direction(channel):
@@ -27,7 +27,7 @@ def toggle_direction(channel):
 	direction *= -1
 	print("Direction:", "forward" if direction == 1 else "reverse")
 
-GPiO.add_event_detect(BUTTON_PIN, GPiO.RISING, callbacks=toggle_direciton, bouncetime = 300)
+GPIO.add_event_detect(BUTTON_PIN, GPIO.RISING, callbacks=toggle_direciton, bouncetime = 300)
 
 try:
 	while True:
@@ -45,4 +45,4 @@ except KeyboardInterrupt:
 finally:
 	for p in pwms:
 		p.stop()
-	GPiO.cleanup()
+	GPIO.cleanup()
