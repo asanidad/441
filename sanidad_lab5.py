@@ -25,10 +25,10 @@ direction = 1
 def toggle_direction(channel = None):
 	global direction
 	if GPIO.input(button_pin):
-		direciton = -1
+		direction = -1
 		print("Direction: reverse")
 	else:
-		direction + 1
+		direction = + 1
 		print("Direction:forward")
 
 toggle_direction()
@@ -38,7 +38,7 @@ GPIO.add_event_detect(button_pin, GPIO.BOTH, callback=toggle_direction, bounceti
 try:
 	while True:
 		t = time.time()
-		phase = 2.0 * math.pi * wave_f + t
+		phase = 2.0 * math.pi * wave_f * t
 		for i, p in enumerate(pwms):
 			s = math.sin(phase - direction * i * phi)
 			B = s * s
@@ -46,7 +46,7 @@ try:
 			p.ChangeDutyCycle(duty)
 
 except KeyboardInterrupt:
-	print("\nExisting (Ctryl+C pressed). Cleaning up GPiO...:")
+	print("\nExisting (Ctrl+C pressed). Cleaning up GPIO...:")
 
 finally:
 	for p in pwms:
