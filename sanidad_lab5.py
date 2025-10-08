@@ -26,10 +26,10 @@ def toggle_direction(channel = None):
 	global direction
 	if GPIO.input(button_pin):
 		direciton = -1
-	print("Direction: reverse")
-else:
-	direction + 1
-	print(Direction:"forward")
+		print("Direction: reverse")
+	else:
+		direction + 1
+		print(Direction:"forward")
 
 toggle_direction()
 
