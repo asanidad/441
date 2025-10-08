@@ -22,12 +22,18 @@ for pin in led_pins:
 GPIO.setup(button_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 direction = 1
-def toggle_direction(channel):
+def toggle_direction(channel = None):
 	global direction
-	direction *= -1
-	print("Direction:", "forward" if direction == 1 else "reverse")
+	if GPIO.input(button_pin):
+		direciton = -1
+	print("Direction: reverse")
+else:
+	direction + 1
+	print(Direction:"forward")
 
-GPIO.add_event_detect(button_pin, GPIO.RISING, callback=toggle_direction, bouncetime = 300)
+toggle_direction()
+
+GPIO.add_event_detect(button_pin, GPIO.BOTH, callback=toggle_direction, bouncetime = 300)
 
 try:
 	while True:
