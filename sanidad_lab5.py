@@ -27,7 +27,7 @@ def toggle_direction(channel):
 	direction *= -1
 	print("Direction:", "forward" if direction == 1 else "reverse")
 
-GPIO.add_event_detect(button_pin, GPIO.RISING, callbacks=toggle_direction, bouncetime = 300)
+GPIO.add_event_detect(button_pin, GPIO.RISING, callback=toggle_direction, bouncetime = 300)
 
 try:
 	while True:
