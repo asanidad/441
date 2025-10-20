@@ -1,39 +1,48 @@
 # ENME 441 – Lab 6
-# Shifter class for SN74HC595 (controls 8 LEDs using 3 GPIO pins)
-# Uses BCM numbering, matches the shift-register slides.
+# Shifter class for SN74HC595 using the same pin roles as shift_reg_initial.py
+# dataPin=23, latchPin=24, clockPin=25  (BCM numbering)
 
 import RPi.GPIO as GPIO
 
 class Shifter:
-    def __init__(self, serialPin, clockPin, latchPin):
-        self.serialPin = serialPin
-        self.clockPin  = clockPin
-        self.latchPin  = latchPin
+    def __init__(self, dataPin=23, latchPin=24, clockPin=25):
+        self.dataPin  = dataPin
+        self.latchPin = latchPin
+        self.clockPin = clockPin
 
         GPIO.setwarnings(False)
         GPIO.setmode(GPIO.BCM)
-        GPIO.setup(self.serialPin, GPIO.OUT)
-        GPIO.setup(self.clockPin,  GPIO.OUT)
-        GPIO.setup(self.latchPin,  GPIO.OUT)
+        GPIO.setup(self.dataPin,  GPIO.OUT)
+        GPIO.setup(self.latchPin, GPIO.OUT, initial=0)   # start low like the class code
+        GPIO.setup(self.clockPin, GPIO.OUT, initial=0)
 
-        # start with LEDs off
+        # start with everything off
         self.shiftByte(0)
 
-    # private helper: one clock pulse to shift a bit in
+    # --- private helper: one rising-edge pulse on the shift clock ---
     def _ping(self):
         GPIO.output(self.clockPin, 1)
         GPIO.output(self.clockPin, 0)
 
-    # public: send one byte (0..255) to Q0..Q7, MSB first
-    def shiftByte(self, data):
-        data &= 0xFF
-        GPIO.output(self.latchPin, 0)           # hold latch low while shifting
-        for i in range(8):
-            bit = (data >> (7 - i)) & 1         # MSB first (matches class demo)
-            GPIO.output(self.serialPin, bit)
-            self._ping()
-        GPIO.output(self.latchPin, 1)           # latch updates Q0..Q7
+    # --- public: shift one byte into the register, LSB-first (matches class code) ---
+    def shiftByte(self, pattern):
+        """Send 8 bits to the 74HC595 and latch them to Q0..Q7.
+           LSB-first to mirror: pattern & (1<<i) in shift_reg_initial.py.
+        """
+        pattern &= 0xFF
 
-    # optional helper I used for cleanup
+        # hold latch low while shifting (same as class code)
+        GPIO.output(self.latchPin, 0)
+
+        # LSB-first, exactly like: pattern & (1<<i)
+        for i in range(8):
+            bit = (pattern >> i) & 1
+            GPIO.output(self.dataPin, bit)
+            self._ping()
+
+        # latch to outputs
+        GPIO.output(self.latchPin, 1)
+        GPIO.output(self.latchPin, 0)
+
     def clear(self):
         self.shiftByte(0)
