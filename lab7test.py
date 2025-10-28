@@ -26,27 +26,49 @@ def parse_post(req_text):
             d[k] = v
     return d
 
+# ---- updated HTML layout ----
 def page():
-    return f"""<html>
-<head><title>Lab 7 – P1</title></head>
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<title>Lab 7 – P1</title>
+<style>
+  body {{
+    font-family: Arial, sans-serif;
+    margin: 40px;
+  }}
+  .box {{
+    border: 1px solid #999;
+    width: 220px;
+    padding: 10px;
+  }}
+  h3 {{
+    margin-top: 0;
+  }}
+  input[type=range] {{
+    width: 100%;
+  }}
+  ul {{
+    padding-left: 15px;
+  }}
+</style>
+</head>
 <body>
-  <h3>Brightness level:</h3>
-  <form action="/" method="POST">
-    <p>Select LED:<br>
-      <label><input type="radio" name="led" value="0" checked> LED 1</label><br>
-      <label><input type="radio" name="led" value="1"> LED 2</label><br>
-      <label><input type="radio" name="led" value="2"> LED 3</label>
-    </p>
-    <p><input type="range" name="level" min="0" max="100" value="0"></p>
-    <p><input type="submit" value="Change Brightness"></p>
-  </form>
-  <hr>
-  <ul>
-    <li>LED 1 ({levels[0]}%)</li>
-    <li>LED 2 ({levels[1]}%)</li>
-    <li>LED 3 ({levels[2]}%)</li>
-  </ul>
-</body></html>"""
+  <div class="box">
+    <h3>Brightness level:</h3>
+    <form method="POST" action="/">
+      <input type="range" name="level" min="0" max="100" value="0"><br><br>
+
+      <b>Select LED:</b><br>
+      <label><input type="radio" name="led" value="0" checked> LED 1 ({levels[0]}%)</label><br>
+      <label><input type="radio" name="led" value="1"> LED 2 ({levels[1]}%)</label><br>
+      <label><input type="radio" name="led" value="2"> LED 3 ({levels[2]}%)</label><br><br>
+
+      <input type="submit" value="Change Brightness">
+    </form>
+  </div>
+</body>
+</html>"""
 
 # ---- tiny HTTP responder ----
 def send_ok(conn, body):
