@@ -1,7 +1,7 @@
 import socket, json
 import RPi.GPIO as GPIO
 
-# GPIO / PWM Setup
+# GPIO/PWM
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 
