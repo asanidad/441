@@ -1,139 +1,108 @@
-# stepper_class_shiftregister_multiprocessing.py
+# lab8.py — ENME441 Lab 8: Stepper Motor Control (simultaneous, shortest-path goAngle)
 #
-# Stepper class – parallel control of multiple steppers via shift register(s)
-# Edits for Lab 8:
-#  - fine-grained locking (simultaneous motion)
-#  - correct per-motor bit masking in __step
-#  - multiprocessing.Value for angle (shared across processes)
-#  - goAngle() shortest-path move
+# This script assumes the class definitions from:
+#   stepper_class_shiftregister_multiprocessing.py
+# which provide:
+#   Shifter(serialPin, clockPin, latchPin)
+#   Stepper(shifter, startBit)
+#
+# The two steppers share one 74HC595.  We map:
+#   Motor m1 -> Q0..Q3  (startBit=0)
+#   Motor m2 -> Q4..Q7  (startBit=4)
+#
+# Both motors are commanded concurrently using multiprocessing so that
+# sequential API calls issued to each motor can execute “at the same time”
+# per the lab requirement.
 
+from multiprocessing import Process
 import time
-import multiprocessing
-from shifter import Shifter   # your Lab 6 class
 
-class Stepper:
+# Import the course-provided classes
+from stepper_class_shiftregister_multiprocessing import Shifter, Stepper
+
+import RPi.GPIO as GPIO  # only for final cleanup here
+
+
+def motor_sequence(motor: Stepper, angles):
     """
-    Supports N stepper motors via one or more shift registers.
-
-    Motors are packed 4 bits each. For 2 motors, motor 2 uses Qa–Qd,
-    motor 1 uses Qe–Qh (MSB near Qa). See comments in starter.
+    Run a sequence of goAngle() commands on a Stepper object.
+    The Stepper class (in the provided module) blocks inside movement calls,
+    so running this in a separate Process allows simultaneous motion.
     """
-
-    # ----- class attributes -----
-    num_steppers      = 0
-    shifter_outputs   = 0
-    # half-step CCW sequence (as in starter)
-    seq               = [0b0001,0b0011,0b0010,0b0110,0b0100,0b1100,0b1000,0b1001]
-    delay_us          = 1200                     # time between steps [µs]
-    steps_per_degree  = 4096/360                 # 4096 steps / rev
-
-    def __init__(self, shifter, lock):
-        self.s = shifter
-        # angle must be shared across processes -> multiprocessing.Value
-        self.angle = multiprocessing.Value('d', 0.0)
-        self.step_state = 0
-        self.shifter_bit_start = 4 * Stepper.num_steppers
-        self.lock = lock
-        Stepper.num_steppers += 1
-
-    # ----- helpers -----
-    @staticmethod
-    def __sgn(x):
-        if x == 0:
-            return 0
-        return 1 if x > 0 else -1
-
-    def __write_outputs(self, new_4bit_value):
-        """
-        Atomically replace this motor's 4 bits in the shared output image,
-        then shift the byte out. Lock is held only during the critical section.
-        """
-        with self.lock:
-            # Clear my 4 bits, then OR in the new 4-bit pattern at my bit start.
-            clear_mask = ~(0b1111 << self.shifter_bit_start) & 0xFF
-            Stepper.shifter_outputs = (Stepper.shifter_outputs & clear_mask) | \
-                                      ((new_4bit_value & 0b1111) << self.shifter_bit_start)
-            self.s.shiftByte(Stepper.shifter_outputs)
-
-    # ----- one step in +/- direction -----
-    def __step(self, dir_sign):
-        self.step_state = (self.step_state + dir_sign) % 8
-        pat = Stepper.seq[self.step_state]
-        self.__write_outputs(pat)
-
-        # Update shared angle
-        with self.angle.get_lock():
-            self.angle.value = (self.angle.value + dir_sign/Stepper.steps_per_degree) % 360.0
-
-    # ----- relative move (runs inside a process) -----
-    def __rotate(self, delta):
-        num_steps = int(abs(delta) * Stepper.steps_per_degree)
-        dir_sign  = Stepper.__sgn(delta)
-        for _ in range(num_steps):
-            self.__step(dir_sign)
-            time.sleep(Stepper.delay_us/1e6)
-
-    # ----- public async relative move -----
-    def rotate(self, delta):
-        # separate process so calls to different motors can overlap
-        p = multiprocessing.Process(target=self.__rotate, args=(delta,))
-        p.start()
-
-    # ----- absolute move by shortest path -----
-    def goAngle(self, target_deg):
-        # normalize target
-        t = float(target_deg) % 360.0
-        with self.angle.get_lock():
-            c = self.angle.value % 360.0
-        # shortest signed delta in (-180, 180]
-        delta = ((t - c + 180.0) % 360.0) - 180.0
-        self.rotate(delta)
-
-    # ----- zero reference -----
-    def zero(self):
-        with self.angle.get_lock():
-            self.angle.value = 0.0
+    # Zero first, per lab directions
+    motor.zero()
+    # Then visit each commanded absolute angle
+    for a in angles:
+        motor.goAngle(a)
+        # Optional short dwell so both motors' prints don’t mash together
+        time.sleep(0.05)
 
 
-# ---------------- Example / Demo ----------------
-if __name__ == '__main__':
-    # Shifter pins: data=16, latch=20, clock=21 (from your earlier labs)
-    s = Shifter(data=16, latch=20, clock=21)
+def main():
+    # ---------------------------------------------------------------------
+    # 1) Configure the shifter to match the lecture / provided file pinout
+    # ---------------------------------------------------------------------
+    # NOTE: Your earlier call s = Shifter(data=…, latch=…, clock=…) failed because
+    # the constructor expects the names below:
+    s = Shifter(serialPin=16, latchPin=20, clockPin=21)
 
-    # One lock shared by all motors: protects only the SPI/shift operation
-    lock = multiprocessing.Lock()
+    # ---------------------------------------------------------------------
+    # 2) Create two independent Stepper instances (two motors on one shifter)
+    # ---------------------------------------------------------------------
+    # Lower nibble (Q0..Q3) for motor 1, upper nibble (Q4..Q7) for motor 2.
+    m1 = Stepper(s, startBit=0)
+    m2 = Stepper(s, startBit=4)
 
-    # Instantiate two motors (m1, m2). Bit packing follows class comment.
-    m1 = Stepper(s, lock)
-    m2 = Stepper(s, lock)
+    # ---------------------------------------------------------------------
+    # 3) Define each motor’s command sequence (absolute angles, degrees)
+    #    matching the lab’s demonstration list
+    # ---------------------------------------------------------------------
+    # Lab demo list (as provided):
+    # m1.zero()
+    # m2.zero()
+    #
+    # m1.goAngle(90)
+    # m1.goAngle(-45)
+    #
+    # m2.goAngle(-90)
+    # m2.goAngle(45)
+    #
+    # m1.goAngle(-135)
+    # m1.goAngle(135)
+    # m1.goAngle(0)
 
-    # Zero both
-    m1.zero()
-    m2.zero()
+    # We will execute the m1 and m2 sequences *concurrently*. That is,
+    # each Process will run its list in order while the other motor is free
+    # to move at the same time.
+    m1_angles = [90, -45, -135, 135, 0]
+    m2_angles = [-90, 45]
 
-    # ---- Lab 8 step 4: demo sequence (simultaneous behavior) ----
-    # If implemented correctly, sequential calls below cause both motors
-    # to move at the same time because each call spawns its own process
-    # and the lock is held only during single-byte writes.
+    # ---------------------------------------------------------------------
+    # 4) Launch both motors in parallel
+    # ---------------------------------------------------------------------
+    p1 = Process(target=motor_sequence, args=(m1, m1_angles))
+    p2 = Process(target=motor_sequence, args=(m2, m2_angles))
 
-    # 1) zero positions already done above
+    print("Starting both motors concurrently…  (Ctrl+C to stop)")
+    p1.start()
+    p2.start()
 
-    # 2) m1
-    m1.goAngle(90)
-    m1.goAngle(-45)
+    # Wait for both to complete
+    p1.join()
+    p2.join()
 
-    # 3) m2
-    m2.goAngle(-90)
-    m2.goAngle(45)
+    print("Done. Both sequences completed.")
 
-    # 4) shortest-path test on m1
-    m1.goAngle(-135)
-    m1.goAngle(135)
-    m1.goAngle(0)
 
-    # keep main alive while child processes run
+if __name__ == "__main__":
     try:
-        while True:
-            time.sleep(0.1)
+        main()
     except KeyboardInterrupt:
-        print('\nend')
+        print("\nInterrupted. Stopping…")
+    finally:
+        # Make sure GPIO is left in a clean state regardless of how we exit.
+        # (The provided class should also be cleaning up on its own; this is a safety net.)
+        try:
+            GPIO.cleanup()
+        except Exception:
+            pass
