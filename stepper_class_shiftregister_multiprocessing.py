@@ -1,149 +1,176 @@
 # stepper_class_shiftregister_multiprocessing.py
-# 74HC595 shifter + very small Stepper class (full-step, 4-phase)
-# Uses two 4-bit nibbles of one shift register: low nibble = motor1, high nibble = motor2
+# ENME441 – Lab 8 (Simultaneous stepper motion using one 74HC595)
 
-import time
-import math
 import RPi.GPIO as GPIO
+import time
+from multiprocessing import Value
 
-
-# ----------------------------
-# 74HC595 helper (one register)
-# ----------------------------
+# ==========================
+# Shift register (74HC595)
+# ==========================
 class Shifter:
-    def __init__(self, data_pin: int, latch_pin: int, clock_pin: int):
-        self.data = data_pin
-        self.latch = latch_pin
-        self.clock = clock_pin
+    """
+    74HC595 driver. Use shiftByte(b) to output 8 bits to Q7..Q0.
+    """
+    def __init__(self, serialPin: int, latchPin: int, clockPin: int):
+        self.ser = serialPin
+        self.latch = latchPin
+        self.clk = clockPin
 
         GPIO.setwarnings(False)
         GPIO.setmode(GPIO.BCM)
-
-        GPIO.setup(self.data, GPIO.OUT, initial=0)
+        GPIO.setup(self.ser, GPIO.OUT, initial=0)
         GPIO.setup(self.latch, GPIO.OUT, initial=0)
-        GPIO.setup(self.clock, GPIO.OUT, initial=0)
+        GPIO.setup(self.clk, GPIO.OUT, initial=0)
 
-        self._last = 0  # last latched byte (so we can change only one nibble)
-
-    def _pulse(self, pin):
+    def _pulse(self, pin: int):
         GPIO.output(pin, 1)
         GPIO.output(pin, 0)
 
-    def shiftByte(self, b: int):
-        """Shift out one byte MSB-first, then latch."""
-        b &= 0xFF
-        for i in range(7, -1, -1):
-            GPIO.output(self.data, (b >> i) & 1)
-            self._pulse(self.clock)
-        # latch to outputs
-        GPIO.output(self.latch, 1)
-        GPIO.output(self.latch, 0)
-        self._last = b
-
-    def write_nibble(self, which: str, val: int):
-        """Update only a nibble ('low' or 'high') and keep the other nibble as-is."""
-        val &= 0x0F
-        if which == 'low':
-            newb = (self._last & 0xF0) | val
-        else:  # 'high'
-            newb = (self._last & 0x0F) | (val << 4)
-        self.shiftByte(newb)
+    def shiftByte(self, value: int):
+        """
+        Send 8 bits MSB→LSB to the 74HC595, then latch.
+        """
+        value &= 0xFF
+        # shift out MSB first (Q7..Q0)
+        for bit in range(7, -1, -1):
+            GPIO.output(self.ser, (value >> bit) & 1)
+            self._pulse(self.clk)
+        self._pulse(self.latch)
 
 
-# ----------------------------
-# Stepper (full-step sequence)
-# ----------------------------
+# ==========================
+# Stepper (full-step, 4-phase)
+# ==========================
 class Stepper:
-    # Full-step sequence (ABCD)
-    _SEQ_FULL = (0x1, 0x2, 0x4, 0x8)
+    """
+    Full-step 4-phase stepper tied to either the low or high nibble of the 74HC595.
+    angle is stored in a multiprocessing.Value so other processes could read it if needed.
+    """
+    # ABCD sequence (one coil at a time)
+    _seq = (0b0001, 0b0010, 0b0100, 0b1000)
 
-    def __init__(self,
-                 shifter: Shifter,
-                 nibble: str = 'low',
-                 mode: str = 'full',
-                 step_angle_deg: float = 1.8,
-                 step_delay_s: float = 0.003):
+    def __init__(self, nibble: str, steps_per_rev: int = 200, step_delay: float = 0.003):
         """
-        nibble: 'low' -> Q0..Q3, 'high' -> Q4..Q7
-        mode:   currently only 'full' is implemented (4 phases)
+        nibble: 'low' → Q0..Q3, 'high' → Q4..Q7
+        steps_per_rev: adjust to your motors (200 is typical for 1.8°/step full-step)
+        step_delay: time per step (seconds)
         """
-        self.s = shifter
-        self.nibble = 'low' if nibble.lower().startswith('l') else 'high'
-        self.mode = mode
-        self.step_angle = float(step_angle_deg)
-        self.delay = float(step_delay_s)
+        assert nibble in ('low', 'high')
+        self.nibble = nibble
+        self.steps_per_rev = steps_per_rev
+        self.step_delay = step_delay
 
-        self._seq = Stepper._SEQ_FULL
-        self._idx = 0  # current index in sequence
-        self.angle = 0.0  # software-tracked absolute angle (deg)
+        self._phase = 0                # index in _seq
+        self.angle = Value('d', 0.0)    # current angle (deg), safe to share
+        self._target_deg = 0.0          # where we want to go (deg)
 
-        # turn off initially
-        self._write_coils(0)
+        # cached
+        self._deg_per_step = 360.0 / float(steps_per_rev)
 
-    # ---- low-level ----
-    def _write_coils(self, val4):
-        self.s.write_nibble(self.nibble, val4 & 0x0F)
-
-    def _step_once(self, direction: int):
-        # direction: +1 or -1
-        self._idx = (self._idx + direction) % len(self._seq)
-        self._write_coils(self._seq[self._idx])
-        time.sleep(self.delay)
-
-    # ---- public API ----
-    def step(self, steps: int):
-        """Number of full steps; positive = CW, negative = CCW (depends on wiring)."""
-        direction = 1 if steps >= 0 else -1
-        for _ in range(abs(int(steps))):
-            self._step_once(direction)
-        # deenergize after motion (safer for bench power)
-        self._write_coils(0)
-
-    def rotate(self, deg: float):
-        """Rotate by a relative angle in degrees."""
-        steps_per_rev = 360.0 / self.step_angle
-        steps = int(round(deg * steps_per_rev / 360.0 * 360.0 / self.step_angle))
-        # equivalently: steps = int(round(deg / self.step_angle))
-        self.step(steps)
-        self.angle = self._norm_angle(self.angle + deg)
-
+    # ----------------------
+    # helpers / state
+    # ----------------------
     def zero(self):
-        """Set current position as 0° (software only)."""
-        self.angle = 0.0
+        self.angle.value = 0.0
+        self._target_deg = 0.0
+        self._phase = 0
 
-    def goAngle(self, target_deg: float):
+    def set_target(self, new_angle_deg: float):
+        """Queue a new absolute target angle (deg) to be reached."""
+        self._target_deg = float(new_angle_deg)
+
+    def at_target(self) -> bool:
+        # use step-space to avoid float drift
+        return self._delta_steps() == 0
+
+    def coil_mask_now(self) -> int:
+        """Return the nibble (4 bits) to energize at this moment."""
+        n = Stepper._seq[self._phase]
+        return (n if self.nibble == 'low' else (n << 4)) & (0x0F if self.nibble == 'low' else 0xF0)
+
+    # ----------------------
+    # stepping math
+    # ----------------------
+    def _round_to_step(self, deg: float) -> int:
+        return int(round(deg / self._deg_per_step))
+
+    def _delta_steps(self) -> int:
         """
-        Go to absolute angle using the shortest path (−180..+180).
-        target is relative to the zero() reference.
+        Steps needed (with shortest path). Positive → forward (phase +1),
+        Negative → reverse (phase -1).
         """
-        cur = self._norm_angle(self.angle)
-        tgt = self._norm_angle(target_deg)
-        delta = tgt - cur
-        # wrap to shortest path
-        if delta > 180.0:
-            delta -= 360.0
-        elif delta < -180.0:
-            delta += 360.0
-        self.rotate(delta)
+        cur_steps = self._round_to_step(self.angle.value)
+        tgt_steps = self._round_to_step(self._target_deg)
+        raw = tgt_steps - cur_steps
 
-    # ---- helpers ----
-    @staticmethod
-    def _norm_angle(a):
-        # normalize to [0, 360)
-        a = math.fmod(a, 360.0)
-        if a < 0:
-            a += 360.0
-        return a
+        # wrap into shortest path over the full revolution
+        half_rev = self.steps_per_rev // 2
+        if raw > half_rev:
+            raw -= self.steps_per_rev
+        elif raw < -half_rev:
+            raw += self.steps_per_rev
+        return raw
+
+    def step_toward_target(self) -> bool:
+        """
+        Take one step toward target if needed.
+        Returns True if a step occurred (i.e., still moving).
+        """
+        ds = self._delta_steps()
+        if ds == 0:
+            return False
+
+        if ds > 0:
+            # forward
+            self._phase = (self._phase + 1) % 4
+            self.angle.value += self._deg_per_step
+        else:
+            # reverse
+            self._phase = (self._phase - 1) % 4
+            self.angle.value -= self._deg_per_step
+        return True
 
 
-# Optional: tiny self-test (won't run when imported)
-if __name__ == "__main__":
-    GPIO.setwarnings(False)
-    try:
-        sh = Shifter(16, 20, 21)
-        m1 = Stepper(sh, nibble='low')
-        m1.zero()
-        m1.goAngle(90)
-        m1.goAngle(0)
-    finally:
-        GPIO.cleanup()
+# ==========================
+# Synchronous controller
+# ==========================
+class SyncController:
+    """
+    Drives multiple Stepper instances in lock-step (same timing loop).
+    Each loop iteration computes the combined 8-bit coil mask (Q7..Q0) and shifts once.
+    This makes motors move *simultaneously* even though you set the targets separately.
+    """
+    def __init__(self, shifter: Shifter):
+        self.s = shifter
+
+    def run_until_all_reached(self, motors: list[Stepper]):
+        """
+        Step loop: on each iteration, any motor that still has distance
+        to go takes one step; others hold their coil. Then we output the
+        merged byte and sleep using the *slowest* motor's step delay.
+        """
+        # choose a conservative delay (largest step_delay among the group)
+        delay = max(m.step_delay for m in motors)
+
+        while True:
+            # check if all are already at target
+            if all(m.at_target() for m in motors):
+                # still need to energize holding coils at the final phases
+                b = 0
+                for m in motors:
+                    b |= m.coil_mask_now()
+                self.s.shiftByte(b)
+                break
+
+            # move one step for each motor that still needs to go
+            for m in motors:
+                m.step_toward_target()
+
+            # build and output the merged nibble byte
+            b = 0
+            for m in motors:
+                b |= m.coil_mask_now()
+            self.s.shiftByte(b)
+
+            time.sleep(delay)
