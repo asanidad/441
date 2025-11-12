@@ -114,45 +114,43 @@ INVERT_M1     = True
 INVERT_M2     = True
 
 def _demo_sequence():
-    ctrl = SyncController(SER_PIN, LATCH_PIN, CLOCK_PIN)
+    ctrl = SyncController(SER_PIN, LATCH_PIN, CLOCK_PIN, tick=0.0008)
 
-    # m1 uses low nibble; m2 uses high nibble
     m1 = Stepper("low",  steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY, invert=INVERT_M1)
     m2 = Stepper("high", steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY, invert=INVERT_M2)
 
-    print("Zero both…")
+    ctrl.attach(m1, m2)
+    ctrl.start()
+
+    # zeros (both will home concurrently)
     m1.zero(); m2.zero()
-    ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
+    ctrl.wait_all(); time.sleep(0.2)
 
-    try:
-        # Pair 1: m1 -> +90, m2 holds (0)  → move together
-        print("m1.goAngle(90); m2.goAngle(0)")
-        m1.goAngle(90);   m2.goAngle(0)
-        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
+    # ---- EXACT ORDER FROM THE PROMPT ----
+    m1.goAngle(90)        # immediately begins (loop already running)
+    ctrl.wait_all(); time.sleep(0.2)
 
-        # Pair 2: m1 -> -45, m2 -> -90     → move together
-        print("m1.goAngle(-45); m2.goAngle(-90)")
-        m1.goAngle(-45);  m2.goAngle(-90)
-        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
+    m1.goAngle(-45)       # begins right away
+    ctrl.wait_all(); time.sleep(0.2)
 
-        # Pair 3: m1 -> -135, m2 -> +45    → move together
-        print("m1.goAngle(-135); m2.goAngle(45)")
-        m1.goAngle(-135); m2.goAngle(45)
-        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
+    m2.goAngle(-90)       # begins right away (m1 now idle)
+    ctrl.wait_all(); time.sleep(0.2)
 
-        # Pair 4: m1 -> +135, m2 -> 0      → move together
-        print("m1.goAngle(135); m2.goAngle(0)")
-        m1.goAngle(135);  m2.goAngle(0)
-        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
+    m2.goAngle(45)
+    ctrl.wait_all(); time.sleep(0.2)
 
-        # Final: back to zero together
-        print("m1.goAngle(0); m2.goAngle(0)")
-        m1.goAngle(0);    m2.goAngle(0)
-        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
+    m1.goAngle(-135)
+    ctrl.wait_all(); time.sleep(0.2)
 
-        print("Done.")
-    finally:
-        GPIO.cleanup()
+    m1.goAngle(135)
+    ctrl.wait_all(); time.sleep(0.2)
+
+    m1.goAngle(0)
+    ctrl.wait_all(); time.sleep(0.2)
+
+    ctrl.stop()
+    print("Done.")
+
 
 
 if __name__ == "__main__":
