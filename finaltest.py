@@ -95,12 +95,20 @@ class Stepper:
             self.busy.value = False
 
     def wait(self):
-        # block until the current move (if any) finishes
+        # Phase 1: wait until this move actually starts
+        for _ in range(2000):                 # ~2s max
+            with self.busy.get_lock():
+                if self.busy.value:
+                    break
+            time.sleep(0.001)
+
+        # Phase 2: wait until it finishes
         while True:
             with self.busy.get_lock():
                 if not self.busy.value:
                     break
-            time.sleep(0.9)
+            time.sleep(0.001)
+
 
     def __worker_loop(self):
         while True:
