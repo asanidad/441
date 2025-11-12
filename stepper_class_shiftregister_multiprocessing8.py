@@ -1,6 +1,6 @@
 import time
 from multiprocessing import Value
-from shifter import Shifter as CourseShifter  # provided by the professor
+from shifter import Shifter as CourseShifter
 import RPi.GPIO as GPIO
 
 # helpers
