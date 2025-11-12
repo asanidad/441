@@ -1,63 +1,48 @@
 # lab8.py
-# ENME441 – Lab 8 demo script (simultaneous version)
+# ENME441 – Lab 8 (Simultaneous Stepper Motion - Slowed Down)
 
 from stepper_class_shiftregister_multiprocessing import Shifter, Stepper, SyncController
 import RPi.GPIO as GPIO
+import time
 
-# 74HC595 pin mapping (BCM)
-SER_PIN   = 16   # DS (SER)
+# --- 74HC595 pin connections (BCM numbers) ---
+SER_PIN   = 16   # DS
 LATCH_PIN = 20   # ST_CP
 CLOCK_PIN = 21   # SH_CP
 
-def move_together(ctrl: SyncController, m1: Stepper, a1: float, m2: Stepper, a2: float):
+def move_together(ctrl, m1, a1, m2, a2, dwell=0.5):
     """
-    Queue new absolute targets for both motors and run them
-    *simultaneously* to completion.
+    Move both motors simultaneously to new absolute targets.
     """
+    print(f"Moving: M1→{a1}°, M2→{a2}°")
     m1.set_target(a1)
     m2.set_target(a2)
     ctrl.run_until_all_reached([m1, m2])
+    time.sleep(dwell)
 
 def main():
     s = Shifter(serialPin=SER_PIN, latchPin=LATCH_PIN, clockPin=CLOCK_PIN)
     ctrl = SyncController(s)
 
-    # Two motors on one 74HC595:
-    m1 = Stepper(nibble='low',  steps_per_rev=200, step_delay=0.003)   # Motor 1 → Q0..Q3
-    m2 = Stepper(nibble='high', steps_per_rev=200, step_delay=0.003)   # Motor 2 → Q4..Q7
+    # Two steppers, both driven by one 74HC595
+    m1 = Stepper(nibble='low',  steps_per_rev=200, step_delay=0.01)   # slower = visible motion
+    m2 = Stepper(nibble='high', steps_per_rev=200, step_delay=0.01)
 
-    # Zero both
+    # Reset and start
     m1.zero()
     m2.zero()
     ctrl.run_until_all_reached([m1, m2])
 
-    print("Running demo…  Press CTRL+C to stop.")
+    print("Running simultaneous motion demo... Press CTRL+C to stop.")
     try:
-        # ----- Lab prompt sequence -----
-        # 1) m1.goAngle(90)
-        move_together(ctrl, m1, 90,  m2, m2.angle.value)
-
-        # 2) m1.goAngle(-45)
-        move_together(ctrl, m1, -45, m2, m2.angle.value)
-
-        # 3) m2.goAngle(-90)
-        move_together(ctrl, m1, m1.angle.value, m2, -90)
-
-        # 4) m2.goAngle(45)
-        move_together(ctrl, m1, m1.angle.value, m2, 45)
-
-        # 5) m1.goAngle(-135)
-        move_together(ctrl, m1, -135, m2, m2.angle.value)
-
-        # 6) m1.goAngle(135)
-        move_together(ctrl, m1, 135,  m2, m2.angle.value)
-
-        # 7) m1.goAngle(0)
-        move_together(ctrl, m1, 0,    m2, m2.angle.value)
-
+        # Both move at once for each pair of commands
+        move_together(ctrl, m1, 90,  m2, -90)     # Opposite directions
+        move_together(ctrl, m1, -45, m2, 45)      # Swap directions
+        move_together(ctrl, m1, 135, m2, -135)    # Wider rotation
+        move_together(ctrl, m1, 0,   m2, 0)       # Return home
         print("Done.")
     except KeyboardInterrupt:
-        print("\nExiting.")
+        print("\nStopped by user.")
     finally:
         GPIO.cleanup()
 
