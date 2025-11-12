@@ -155,9 +155,5 @@ def _demo_sequence():
 
     print("Done.")
 
-    finally:
-        GPIO.cleanup()
-
-
 if __name__ == "__main__":
     _demo_sequence()
