@@ -1,176 +1,159 @@
-# stepper_class_shiftregister_multiprocessing.py
-# ENME441 – Stepper control via 74HC595 shift register
-# One file with Shifter + Stepper. Motors step simultaneously on each tick.
-
 import time
+from multiprocessing import Value
+from shifter import Shifter as CourseShifter
 import RPi.GPIO as GPIO
 
-# -------------------- basic hardware setup --------------------
-GPIO.setwarnings(False)
-GPIO.setmode(GPIO.BCM)
+# helpers
+def _rev8(b: int) -> int:
+    b &= 0xFF
+    b = ((b & 0xF0) >> 4) | ((b & 0x0F) << 4)
+    b = ((b & 0xCC) >> 2) | ((b & 0x33) << 2)
+    b = ((b & 0xAA) >> 1) | ((b & 0x55) << 1)
+    return b
 
-# 74HC595 pins (BCM)
-DEFAULT_DATA  = 16
-DEFAULT_LATCH = 20
-DEFAULT_CLOCK = 21
-
-# 28BYJ-48 defaults (half-step)
-STEPS_PER_REV = 4096          # adjust if you calibrated
-STEP_DELAY_S  = 0.003         # speed (larger = slower)
-DIR_SIGN      = +1            # flip to -1 if your “+deg” looks backwards
-
-# half-step nibble sequence for one motor (A,B,C,D on bits 0..3)
-SEQ = (0x1, 0x3, 0x2, 0x6, 0x4, 0xC, 0x8, 0x9)
-SEQ_LEN = len(SEQ)
-
-
-# -------------------- helpers --------------------
-def shortest_delta_deg(a, b):
-    """signed shortest delta from angle a to b (-180..+180]"""
-    d = (b - a) % 360.0
-    if d > 180.0:
-        d -= 360.0
-    return d
-
-def degrees_to_steps(deg, spr=STEPS_PER_REV):
-    return int(round((deg / 360.0) * spr))
-
-def steps_to_degrees(steps, spr=STEPS_PER_REV):
-    return (steps * 360.0) / float(spr)
-
-
-# -------------------- Shifter --------------------
-class Shifter:
-    """Tiny 74HC595 driver (MSB-first). Also holds the list of motors so we can step them together."""
-    def __init__(self, data=DEFAULT_DATA, latch=DEFAULT_LATCH, clock=DEFAULT_CLOCK):
-        self.data  = data
-        self.latch = latch
-        self.clock = clock
-        for p in (self.data, self.latch, self.clock):
-            GPIO.setup(p, GPIO.OUT, initial=GPIO.LOW)
-        self._motors = []   # Stepper objects registered here
-
-    def register(self, motor):
-        if motor not in self._motors:
-            self._motors.append(motor)
-
-    def shiftByte(self, byte):
-        GPIO.output(self.latch, GPIO.LOW)
-        # MSB first
-        for bit in range(7, -1, -1):
-            GPIO.output(self.clock, GPIO.LOW)
-            GPIO.output(self.data, GPIO.HIGH if ((byte >> bit) & 1) else GPIO.LOW)
-            GPIO.output(self.clock, GPIO.HIGH)
-        GPIO.output(self.latch, GPIO.HIGH)
-
-    def _any_pending(self):
-        return any(m._steps_left > 0 for m in self._motors)
-
-    def run_until_idle(self, step_delay=STEP_DELAY_S):
-        """Step all registered motors together until every one completes its pending motion."""
-        while self._any_pending():
-            # advance those that still need a step
-            for m in self._motors:
-                if m._steps_left > 0:
-                    m._step_once()
-            # pack both nibbles into one byte and output once per tick
-            b = 0
-            for m in self._motors:
-                b |= m._nibble()
-            self.shiftByte(b)
-            time.sleep(step_delay)
-        # Done -> update final angles and optionally de-energize
-        for m in self._motors:
-            if m._accum_steps != 0:
-                m.angle = (m.angle + steps_to_degrees(m._accum_steps / DIR_SIGN, m.steps_per_rev)) % 360.0
-                m._accum_steps = 0
-        # comment next line if you prefer holding torque after a move
-        # self.shiftByte(0x00)
-
-
-# -------------------- Stepper --------------------
+# motor class
 class Stepper:
-    """One 28BYJ-48 on one nibble of the shift-register byte."""
-    def __init__(self, shifter, use_high_nibble=False, steps_per_rev=STEPS_PER_REV):
-        self.s = shifter
-        self.s.register(self)
-        self.use_high = bool(use_high_nibble)  # False = low nibble, True = high nibble
+    # full-step (single coil) sequence; invert=True flips direction
+    _seq     = (0b0001, 0b0010, 0b0100, 0b1000)     # A B C D
+    _seq_inv = tuple(reversed(_seq))                # D C B A
+
+    def __init__(self, nibble: str, steps_per_rev: int = 2048,
+                 step_delay: float = 0.012, invert: bool = False):
+        assert nibble in ("low", "high")
+        self.nibble = nibble
         self.steps_per_rev = int(steps_per_rev)
+        self.step_delay = float(step_delay)
+        self.invert = bool(invert)
 
-        self.seq_idx     = 0
-        self.angle       = 0.0     # logical angle (deg) relative to zero()
-        self._steps_left = 0       # pending steps for current command
-        self._dir        = +1
-        self._accum_steps = 0      # total scheduled this burst (used to update angle once)
+        # track position as integer steps (avoids float rounding)
+        self.step_pos = 0
+        self.target_step = 0
 
-    # current coil nibble
-    def _nibble(self):
-        val = SEQ[self.seq_idx]
-        return (val << 4) & 0xF0 if self.use_high else (val & 0x0F)
+        # angle view (shared-friendly)
+        self.angle = Value('d', 0.0)
+        self._deg_per_step = 360.0 / self.steps_per_rev
 
-    # perform one step in the queued direction
-    def _step_once(self):
-        self.seq_idx = (self.seq_idx + (1 if self._dir > 0 else -1)) % SEQ_LEN
-        self._steps_left -= 1
+    # current 4-phase index (0..3)
+    def _phase_index(self) -> int:
+        return self.step_pos & 0x3
 
-    # user API
+    # return this motor's 8-bit mask in the shared output byte
+    def coil_mask_now(self) -> int:
+        phase = (Stepper._seq_inv if self.invert else Stepper._seq)[self._phase_index()]
+        return (phase if self.nibble == "low" else (phase << 4)) & 0xFF
+
+    def _update_angle_view(self):
+        self.angle.value = self.step_pos * self._deg_per_step
+
     def zero(self):
-        self.angle = 0.0
+        self.step_pos = 0
+        self.target_step = 0
+        self._update_angle_view()
 
-    def setSpeed(self, step_delay_s):
-        global STEP_DELAY_S
-        STEP_DELAY_S = float(step_delay_s)
+    # absolute move to angle a (deg) using shortest path
+    def goAngle(self, a: float):
+        tgt_nom = int(round(a / self._deg_per_step))
+        cur_mod = self.step_pos % self.steps_per_rev
+        tgt_mod = tgt_nom % self.steps_per_rev
+        delta = tgt_mod - cur_mod
+        half = self.steps_per_rev // 2
+        if delta >  half: delta -= self.steps_per_rev
+        if delta < -half: delta += self.steps_per_rev
+        self.target_step = self.step_pos + delta
 
-    def rotate(self, deg):
-        """Relative rotation (deg). This only *queues* the move; after queueing several
-        motors, call shifter.run_until_idle() to move them together."""
-        # respect chosen “+deg” direction convention
-        deg *= DIR_SIGN
-        n = abs(degrees_to_steps(deg, self.steps_per_rev))
-        self._dir = +1 if deg >= 0 else -1
-        self._steps_left += n
-        self._accum_steps += self._dir * n
+    def at_target(self) -> bool:
+        return self.step_pos == self.target_step
 
-    def goAngle(self, target_deg):
-        """Shortest-path move to an absolute angle (deg) relative to zero()."""
-        delta = shortest_delta_deg(self.angle, target_deg)
-        self.rotate(delta)
+    # one step toward target (returns True if stepped)
+    def step_toward_target(self) -> bool:
+        if self.at_target():
+            return False
+        self.step_pos += 1 if self.target_step > self.step_pos else -1
+        self._update_angle_view()
+        return True
 
 
-# -------------------- Demo (runs the required sequence) --------------------
-def _demo():
-    s  = Shifter()                          # default pins 16,20,21
-    m1 = Stepper(s, use_high_nibble=False)  # low nibble
-    m2 = Stepper(s, use_high_nibble=True)   # high nibble
+# controller for motor lockstep
+class SyncController:
+    def __init__(self, data_pin: int, latch_pin: int, clock_pin: int):
+        self.s = CourseShifter(data=data_pin, latch=latch_pin, clock=clock_pin)
 
-    # speed tweak if needed:
-    # m1.setSpeed(0.004); m2.setSpeed(0.004)
+    def _push_byte(self, b: int):
+        # the course shifter clocks LSB-first, so reverse once here
+        self.s.shiftByte(_rev8(b))
 
-    # logical zeros
+    def run_until_all_reached(self, motors):
+        delay = max(m.step_delay for m in motors) if motors else 0.01
+        while True:
+            # if already at targets, still refresh outputs so coils are held
+            if all(m.at_target() for m in motors):
+                out = 0
+                for m in motors: out |= m.coil_mask_now()
+                self._push_byte(out)
+                break
+
+            # take one step on whichever still needs it
+            for m in motors:
+                m.step_toward_target()
+
+            # combine the two nibbles and send one byte
+            out = 0
+            for m in motors: out |= m.coil_mask_now()
+            self._push_byte(out)
+
+            time.sleep(delay)
+
+
+# question 4 demonstration
+SER_PIN   = 16   # BCM
+LATCH_PIN = 20
+CLOCK_PIN = 21
+STEPS_PER_REV = 2048    # 28BYJ-48 full-step
+STEP_DELAY    = 0.012
+INVERT_M1     = True
+INVERT_M2     = True
+
+def _demo_sequence():
+    ctrl = SyncController(SER_PIN, LATCH_PIN, CLOCK_PIN)
+
+    # m1 uses low nibble; m2 uses high nibble
+    m1 = Stepper("low",  steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY, invert=INVERT_M1)
+    m2 = Stepper("high", steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY, invert=INVERT_M2)
+
+    print("Zero both…")
     m1.zero(); m2.zero()
+    ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
 
-    # The trick for “simultaneous” is: queue both motors’ moves, then call run_until_idle() once.
-
-    # m1: +90 then -45
-    m1.rotate(+90);            s.run_until_idle()      # queue + run
-    m1.rotate(-45);            s.run_until_idle()
-
-    # m2: -90 then +45
-    m2.rotate(-90);            s.run_until_idle()
-    m2.rotate(+45);            s.run_until_idle()
-
-    # m1: -135, +135, 0
-    m1.rotate(-135);           s.run_until_idle()
-    m1.rotate(+135);           s.run_until_idle()
-    m1.goAngle(0);             s.run_until_idle()
-
-    # release coils at the end (optional)
-    s.shiftByte(0x00)
-
-if __name__ == "__main__":
     try:
-        _demo()
-    except KeyboardInterrupt:
-        pass
+        # Pair 1: m1 -> +90, m2 holds (0)  → move together
+        print("m1.goAngle(90); m2.goAngle(0)")
+        m1.goAngle(90);   m2.goAngle(0)
+        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
+
+        # Pair 2: m1 -> -45, m2 -> -90     → move together
+        print("m1.goAngle(-45); m2.goAngle(-90)")
+        m1.goAngle(-45);  m2.goAngle(-90)
+        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
+
+        # Pair 3: m1 -> -135, m2 -> +45    → move together
+        print("m1.goAngle(-135); m2.goAngle(45)")
+        m1.goAngle(-135); m2.goAngle(45)
+        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
+
+        # Pair 4: m1 -> +135, m2 -> 0      → move together
+        print("m1.goAngle(135); m2.goAngle(0)")
+        m1.goAngle(135);  m2.goAngle(0)
+        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
+
+        # Final: back to zero together
+        print("m1.goAngle(0); m2.goAngle(0)")
+        m1.goAngle(0);    m2.goAngle(0)
+        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
+
+        print("Done.")
     finally:
         GPIO.cleanup()
+
+
+if __name__ == "__main__":
+    _demo_sequence()
