@@ -147,15 +147,15 @@ if __name__ == '__main__':
     m1.zero(); m2.zero()
     m1.wait(); m2.wait()        # had to add a wait helper because motor wouldnt visibly stop at each desired angle
 
-    m1.goAngle(90);    m1.wait(); time.sleep(0.6)
-    m1.goAngle(-45);   m1.wait(); time.sleep(0.6)
+    m1.goAngle(90);    m1.wait(); time.sleep(0.1)
+    m1.goAngle(-45);   m1.wait(); time.sleep(0.1)
 
-    m2.goAngle(-90);   m2.wait(); time.sleep(0.6)
-    m2.goAngle(45);    m2.wait(); time.sleep(0.6)
+    m2.goAngle(-90);   m2.wait(); time.sleep(0.1)
+    m2.goAngle(45);    m2.wait(); time.sleep(0.1)
 
-    m1.goAngle(-135);  m1.wait(); time.sleep(0.6)
-    m1.goAngle(135);   m1.wait(); time.sleep(0.6)
-    m1.goAngle(0);     m1.wait(); time.sleep(0.6)
+    m1.goAngle(-135);  m1.wait(); time.sleep(0.1)
+    m1.goAngle(135);   m1.wait(); time.sleep(0.1)
+    m1.goAngle(0);     m1.wait(); time.sleep(0.1)
 
 
     try:
