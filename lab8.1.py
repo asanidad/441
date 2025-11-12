@@ -12,7 +12,7 @@ LATCH_PIN = 20   # ST_CP
 CLOCK_PIN = 21   # SH_CP
 
 STEPS_PER_REV = 2048   # 28BYJ-48 full-step (AB→BC→CD→DA) via ULN2003
-STEP_DELAY    = 0.010  # 10 ms between steps (safe speed)
+STEP_DELAY    = 0.08  # 10 ms between steps (safe speed)
 
 def run_until_reached(ctrl, m1, m2, dwell=0.4):
     """Drive both motors until both have reached their current targets."""
