@@ -100,7 +100,7 @@ class Stepper:
             with self.busy.get_lock():
                 if not self.busy.value:
                     break
-            time.sleep(0.01)
+            time.sleep(0.06)
 
     def __worker_loop(self):
         while True:
