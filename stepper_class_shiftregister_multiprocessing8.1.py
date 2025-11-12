@@ -114,7 +114,7 @@ INVERT_M1     = True
 INVERT_M2     = True
 
 def _demo_sequence():
-    ctrl = SyncController(SER_PIN, LATCH_PIN, CLOCK_PIN, tick=0.0008)
+    ctrl = SyncController(SER_PIN, LATCH_PIN, CLOCK_PIN)
 
     m1 = Stepper("low",  steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY, invert=INVERT_M1)
     m2 = Stepper("high", steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY, invert=INVERT_M2)
