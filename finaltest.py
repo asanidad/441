@@ -113,13 +113,13 @@ class Stepper:
                 break                           # motion finished
 
             time.sleep(0.001)                   # fast, smooth poll
-"""
+        """
         # optional short, reliable dwell at the target (sub-10 ms accurate)
         if dwell_s > 0.0:
             end = time.perf_counter() + float(dwell_s)
             while time.perf_counter() < end:
                 pass
-"""
+        """
 
 
     def __worker_loop(self):
