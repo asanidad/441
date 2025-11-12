@@ -90,10 +90,10 @@ class Stepper:
                 time.sleep(Stepper.delay/1e6)
 
     def __worker_loop(self):
-    while True:
-        cmd, val = self.queue.get()   # ("rel", delta) or ("abs", target)
-        if cmd == "rel":
-            self.__rotate(val)
+        while True:
+            cmd, val = self.queue.get()   # ("rel", delta) or ("abs", target)
+            if cmd == "rel":
+                self.__rotate(val)
         else:  # "abs"
             with self.angle.get_lock():
                 current = self.angle.value
