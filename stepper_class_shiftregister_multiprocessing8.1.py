@@ -116,44 +116,44 @@ INVERT_M2     = True
 def _demo_sequence():
     ctrl = SyncController(SER_PIN, LATCH_PIN, CLOCK_PIN)
 
-    # m1 = low nibble, m2 = high nibble
+    # m1 uses low nibble; m2 uses high nibble
     m1 = Stepper("low",  steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY, invert=INVERT_M1)
     m2 = Stepper("high", steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY, invert=INVERT_M2)
 
-    print("Zero both")
+    print("Zero both…")
     m1.zero(); m2.zero()
-    ctrl.run_until_all_reached([m1, m2]); time.sleep(0.3)
+    ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
 
-    # ---- follow the assignment order exactly ----
-    print("m1.goAngle(90)")
-    m1.goAngle(90)
-    ctrl.run_until_all_reached([m1, m2]); time.sleep(0.3)
+    try:
+        # Pair 1: m1 -> +90, m2 holds (0)  → move together
+        print("m1.goAngle(90); m2.goAngle(0)")
+        m1.goAngle(90);   m2.goAngle(0)
+        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
 
-    print("m1.goAngle(-45)")
-    m1.goAngle(-45)
-    ctrl.run_until_all_reached([m1, m2]); time.sleep(0.3)
+        # Pair 2: m1 -> -45, m2 -> -90     → move together
+        print("m1.goAngle(-45); m2.goAngle(-90)")
+        m1.goAngle(-45);  m2.goAngle(-90)
+        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
 
-    print("m2.goAngle(-90)")
-    m2.goAngle(-90)
-    ctrl.run_until_all_reached([m1, m2]); time.sleep(0.3)
+        # Pair 3: m1 -> -135, m2 -> +45    → move together
+        print("m1.goAngle(-135); m2.goAngle(45)")
+        m1.goAngle(-135); m2.goAngle(45)
+        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
 
-    print("m2.goAngle(45)")
-    m2.goAngle(45)
-    ctrl.run_until_all_reached([m1, m2]); time.sleep(0.3)
+        # Pair 4: m1 -> +135, m2 -> 0      → move together
+        print("m1.goAngle(135); m2.goAngle(0)")
+        m1.goAngle(135);  m2.goAngle(0)
+        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
 
-    print("m1.goAngle(-135)")
-    m1.goAngle(-135)
-    ctrl.run_until_all_reached([m1, m2]); time.sleep(0.3)
+        # Final: back to zero together
+        print("m1.goAngle(0); m2.goAngle(0)")
+        m1.goAngle(0);    m2.goAngle(0)
+        ctrl.run_until_all_reached([m1, m2]); time.sleep(0.4)
 
-    print("m1.goAngle(135)")
-    m1.goAngle(135)
-    ctrl.run_until_all_reached([m1, m2]); time.sleep(0.3)
+        print("Done.")
+    finally:
+        GPIO.cleanup()
 
-    print("m1.goAngle(0)")
-    m1.goAngle(0)
-    ctrl.run_until_all_reached([m1, m2]); time.sleep(0.3)
-
-    print("Done.")
 
 if __name__ == "__main__":
     _demo_sequence()
