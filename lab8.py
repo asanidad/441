@@ -22,7 +22,7 @@ from stepper_class_shiftregister_multiprocessing import Stepper, Shifter
 
 def main():
     # Shifter pins: SER=16, LATCH=20, CLOCK=21 (keep your wiring the same)
-    s = Shifter(16, 20, 21)   # SER=16, LATCH=20, CLOCK=21  (positional args)
+    s = Shifter(16, 21, 20)   # SER=16, LATCH=20, CLOCK=21  (positional args)
 
     # IMPORTANT: give each motor its *own* lock to enable simultaneous moves.
     lock1 = multiprocessing.Lock()
