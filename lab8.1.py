@@ -1,46 +1,73 @@
 # lab8.py
-# ENME441 – Lab 8 (Simultaneous Stepper Motion - Slowed Down)
+# ENME441 – Lab 8: Stepper Motor Control
+# Runs the instructor's command sequence with both motors operating simultaneously.
 
 from stepper_class_shiftregister_multiprocessing import Shifter, Stepper, SyncController
 import RPi.GPIO as GPIO
 import time
 
-# --- 74HC595 pin connections (BCM numbers) ---
+# ---- 74HC595 wiring (BCM) ----
 SER_PIN   = 16   # DS
 LATCH_PIN = 20   # ST_CP
 CLOCK_PIN = 21   # SH_CP
 
-def move_together(ctrl, m1, a1, m2, a2, dwell=0.5):
-    """
-    Move both motors simultaneously to new absolute targets.
-    """
-    print(f"Moving: M1→{a1}°, M2→{a2}°")
-    m1.set_target(a1)
-    m2.set_target(a2)
+# tweak for speed/visibility (bigger = slower)
+STEP_DELAY = 0.010      # seconds per step (try 0.015–0.020 if you want slower)
+
+def run_until_reached(ctrl, m1, m2, dwell=0.4):
+    """Drive both motors until both have reached their current targets."""
     ctrl.run_until_all_reached([m1, m2])
-    time.sleep(dwell)
+    if dwell > 0:
+        time.sleep(dwell)
 
 def main():
+    # Shift register + controller
     s = Shifter(serialPin=SER_PIN, latchPin=LATCH_PIN, clockPin=CLOCK_PIN)
     ctrl = SyncController(s)
 
-    # Two steppers, both driven by one 74HC595
-    m1 = Stepper(nibble='low',  steps_per_rev=200, step_delay=0.01)   # slower = visible motion
-    m2 = Stepper(nibble='high', steps_per_rev=200, step_delay=0.01)
+    # Two steppers on the same 74HC595 (Q0..Q3 = m1, Q4..Q7 = m2)
+    m1 = Stepper(nibble='low',  steps_per_rev=200, step_delay=STEP_DELAY)
+    m2 = Stepper(nibble='high', steps_per_rev=200, step_delay=STEP_DELAY)
 
-    # Reset and start
+    print("Zeroing both motors…")
     m1.zero()
     m2.zero()
-    ctrl.run_until_all_reached([m1, m2])
+    run_until_reached(ctrl, m1, m2)
 
-    print("Running simultaneous motion demo... Press CTRL+C to stop.")
+    print("Running lab sequence with simultaneous operation… (CTRL+C to stop)")
     try:
-        # Both move at once for each pair of commands
-        move_together(ctrl, m1, 90,  m2, -90)     # Opposite directions
-        move_together(ctrl, m1, -45, m2, 45)      # Swap directions
-        move_together(ctrl, m1, 135, m2, -135)    # Wider rotation
-        move_together(ctrl, m1, 0,   m2, 0)       # Return home
-        print("Done.")
+        # The sequence from the prompt:
+        # m1.zero(); m2.zero(); (already done above)
+        # m1.goAngle(90)
+        m1.set_target(90)         # change ONLY m1 target
+        # keep both in the scheduler so they step on the same cadence
+        run_until_reached(ctrl, m1, m2)
+
+        # m1.goAngle(-45)
+        m1.set_target(-45)
+        run_until_reached(ctrl, m1, m2)
+
+        # m2.goAngle(-90)
+        m2.set_target(-90)
+        run_until_reached(ctrl, m1, m2)
+
+        # m2.goAngle(45)
+        m2.set_target(45)
+        run_until_reached(ctrl, m1, m2)
+
+        # m1.goAngle(-135)
+        m1.set_target(-135)
+        run_until_reached(ctrl, m1, m2)
+
+        # m1.goAngle(135)
+        m1.set_target(135)
+        run_until_reached(ctrl, m1, m2)
+
+        # m1.goAngle(0)
+        m1.set_target(0)
+        run_until_reached(ctrl, m1, m2)
+
+        print("Sequence complete.")
     except KeyboardInterrupt:
         print("\nStopped by user.")
     finally:
