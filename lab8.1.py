@@ -36,11 +36,18 @@ def main():
 
     print("Running lab sequence with simultaneous operation… (CTRL+C to stop)")
     try:
-        print("Calibrating one full turn on M1...")
-        m1.set_target(360)                 # ask for 360 degrees on Motor 1
-        m2.set_target(0)                   # keep Motor 2 still
-        ctrl.run_until_all_reached([m1, m2])
-        print("Done. Did M1 turn exactly 360°?")
+        # ---- TEMP CALIBRATION (run once) ----
+        print("Calibrating: four consecutive 90° moves on M1 (M2 holds)…")
+        m1.zero(); m2.zero()
+        for i in range(4):
+            # keep M2 target unchanged so both still tick together
+            m1.set_target(m1.angle.value + 90)   # +90 each time → total 360
+            m2.set_target(m2.angle.value)        # hold M2 position
+            ctrl.run_until_all_reached([m1, m2])
+            time.sleep(0.3)
+        print("Did M1 complete ~one full revolution? If not, adjust STEPS_PER_REV.")
+        # ---- END TEMP ----
+
 
         # The sequence from the prompt:
         # m1.zero(); m2.zero(); (already done above)
