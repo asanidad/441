@@ -1,16 +1,9 @@
-# stepper_class_shiftregister_multiprocessing.py
-# ENME441 Lab 8 – two steppers via one 74HC595 shift register
-# - low nibble (Q0..Q3) = motor 1
-# - high nibble (Q4..Q7) = motor 2
-# - simultaneous stepping + shortest-path goAngle(a)
-# - uses the course shifter.py directly (bit order reversed here once)
-
 import time
 from multiprocessing import Value
 from shifter import Shifter as CourseShifter  # provided by the professor
 import RPi.GPIO as GPIO
 
-# ====== simple helpers ======
+# helpers
 def _rev8(b: int) -> int:
     b &= 0xFF
     b = ((b & 0xF0) >> 4) | ((b & 0x0F) << 4)
@@ -18,7 +11,7 @@ def _rev8(b: int) -> int:
     b = ((b & 0xAA) >> 1) | ((b & 0x55) << 1)
     return b
 
-# ====== motor class ======
+# motor class
 class Stepper:
     # full-step (single coil) sequence; invert=True flips direction
     _seq     = (0b0001, 0b0010, 0b0100, 0b1000)     # A B C D
@@ -80,7 +73,7 @@ class Stepper:
         return True
 
 
-# ====== controller that keeps both motors in lockstep ======
+# controller for motor lockstep
 class SyncController:
     def __init__(self, data_pin: int, latch_pin: int, clock_pin: int):
         self.s = CourseShifter(data=data_pin, latch=latch_pin, clock=clock_pin)
@@ -111,14 +104,13 @@ class SyncController:
             time.sleep(delay)
 
 
-# ====== demo: exact sequence the prompt asks for ======
-# You can change these three to match your wiring and speed.
+# question 4 demonstration
 SER_PIN   = 16   # BCM
 LATCH_PIN = 20
 CLOCK_PIN = 21
-STEPS_PER_REV = 2048    # 28BYJ-48 full-step (use 4096 if half-step)
-STEP_DELAY    = 0.012   # slower so it’s visible
-INVERT_M1     = True    # flip if your motor spins opposite
+STEPS_PER_REV = 2048    # 28BYJ-48 full-step
+STEP_DELAY    = 0.012
+INVERT_M1     = True
 INVERT_M2     = True
 
 def _demo_sequence():
