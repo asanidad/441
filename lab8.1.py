@@ -1,74 +1,52 @@
-# lab8.py
-# ENME441 – Lab 8: Stepper Motor Control
-# Runs the instructor's command sequence with both motors operating simultaneously.
+# lab8.py — ENME441 Lab 8: Stepper Motor Control (simultaneous + slowed)
+# Uses professor's shifter via shim_shifter (bit-reversal wrapper).
 
-from stepper_class_shiftregister_multiprocessing import Shifter, Stepper, SyncController
+from shim_shifter import Shifter                    # wrapper around prof's shifter.py
+from stepper_class_shiftregister_multiprocessing import Stepper, SyncController
 import RPi.GPIO as GPIO
 import time
 
-# ---- 74HC595 wiring (BCM) ----
-SER_PIN   = 16   # DS
-LATCH_PIN = 20   # ST_CP
-CLOCK_PIN = 21   # SH_CP
+# ---------- wiring (BCM) ----------
+# Your wiring: DATA=16, LATCH=20, CLOCK=21
+# Prof's Shifter ctor = (data, clock, latch) — note the order.
+SER_PIN   = 16   # DS (data)
+CLOCK_PIN = 21   # SH_CP (clock)
+LATCH_PIN = 20   # ST_CP (latch)
 
-STEPS_PER_REV = 2048   # 28BYJ-48 full-step (AB→BC→CD→DA) via ULN2003
-STEP_DELAY    = 0.015  # 10 ms between steps (safe speed)
+# ---------- motion tuning ----------
+STEPS_PER_REV = 2048   # 28BYJ-48 full-step via ULN2003; use 4096 if you switch to half-step
+STEP_DELAY    = 0.012  # slower = more visible (10–15 ms is safe)
 
 def run_until_reached(ctrl, m1, m2, dwell=0.4):
-    """Drive both motors until both have reached their current targets."""
     ctrl.run_until_all_reached([m1, m2])
     if dwell > 0:
         time.sleep(dwell)
 
 def main():
-    # Shift register + controller
-    s = Shifter(serialPin=SER_PIN, latchPin=LATCH_PIN, clockPin=CLOCK_PIN)
+    s = Shifter(data=SER_PIN, clock=CLOCK_PIN, latch=LATCH_PIN)
     ctrl = SyncController(s)
 
-    # Two steppers on the same 74HC595 (Q0..Q3 = m1, Q4..Q7 = m2)
+    # Two steppers on one 74HC595: low nibble = M1 (Q0..Q3), high nibble = M2 (Q4..Q7)
     m1 = Stepper(nibble='low',  steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY)
     m2 = Stepper(nibble='high', steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY)
 
-    print("Zeroing both motors…")
-    m1.zero()
-    m2.zero()
+    print("Zeroing both...")
+    m1.zero(); m2.zero()
     run_until_reached(ctrl, m1, m2)
 
-    print("Running lab sequence with simultaneous operation… (CTRL+C to stop)")
+    print("Running lab sequence with simultaneous timing...")
     try:
-        # The sequence from the prompt:
-        # m1.zero(); m2.zero(); (already done above)
-        # m1.goAngle(90)
-        
-        m1.set_target(90)         # change ONLY m1 target
-        # keep both in the scheduler so they step on the same cadence
-        run_until_reached(ctrl, m1, m2)
+        # EXACT PROMPT SEQUENCE, keeping both motors in the scheduler each time
+        # m1.zero(); m2.zero();  (already done)
+        print("m1 -> 90");     m1.set_target( 90);  m2.set_target(m2.angle.value); run_until_reached(ctrl, m1, m2)
+        print("m1 -> -45");    m1.set_target(-45);  m2.set_target(m2.angle.value); run_until_reached(ctrl, m1, m2)
+        print("m2 -> -90");    m1.set_target(m1.angle.value); m2.set_target(-90);  run_until_reached(ctrl, m1, m2)
+        print("m2 -> 45");     m1.set_target(m1.angle.value); m2.set_target( 45);  run_until_reached(ctrl, m1, m2)
+        print("m1 -> -135");   m1.set_target(-135); m2.set_target(m2.angle.value); run_until_reached(ctrl, m1, m2)
+        print("m1 -> 135");    m1.set_target( 135); m2.set_target(m2.angle.value); run_until_reached(ctrl, m1, m2)
+        print("m1 -> 0");      m1.set_target(   0); m2.set_target(m2.angle.value); run_until_reached(ctrl, m1, m2)
 
-        # m1.goAngle(-45)
-        m1.set_target(-45)
-        run_until_reached(ctrl, m1, m2)
-
-        # m2.goAngle(-90)
-        m2.set_target(-90)
-        run_until_reached(ctrl, m1, m2)
-
-        # m2.goAngle(45)
-        m2.set_target(45)
-        run_until_reached(ctrl, m1, m2)
-
-        # m1.goAngle(-135)
-        m1.set_target(-135)
-        run_until_reached(ctrl, m1, m2)
-
-        # m1.goAngle(135)
-        m1.set_target(135)
-        run_until_reached(ctrl, m1, m2)
-
-        # m1.goAngle(0)
-        m1.set_target(0)
-        run_until_reached(ctrl, m1, m2)
-
-        print("Sequence complete.")
+        print("Done.")
     except KeyboardInterrupt:
         print("\nStopped by user.")
     finally:
