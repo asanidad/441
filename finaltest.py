@@ -95,22 +95,31 @@ class Stepper:
             self.busy.value = False
 
     def wait(self, dwell_s=0.0):
-        # Phase 1: wait until the worker actually starts (busy turns True at least once)
         started = False
         while True:
+            # If nothing has started AND nothing is queued AND not busy -> nothing to wait for
+            if not started and self.queue.empty():
+                with self.busy.get_lock():
+                    if not self.busy.value:
+                        break
+
             with self.busy.get_lock():
                 b = self.busy.value
-            if b:
-                started = True
-            if started and not b:
-                break
-            time.sleep(0.001)  # fast poll for smooth/short waits
 
-        # Optional micro-dwell at the target (precise short pause)
+            if b:
+                started = True                  # we saw motion start
+
+            if started and not b:
+                break                           # motion finished
+
+            time.sleep(0.001)                   # fast, smooth poll
+"""
+        # optional short, reliable dwell at the target (sub-10 ms accurate)
         if dwell_s > 0.0:
             end = time.perf_counter() + float(dwell_s)
             while time.perf_counter() < end:
-                pass  # spin a few ms for sub-10 ms accuracy
+                pass
+"""
 
 
     def __worker_loop(self):
@@ -156,7 +165,7 @@ if __name__ == '__main__':
     m2 = Stepper(s, lock2)
 
     m1.zero(); m2.zero()
-    m1.wait(); m2.wait()        # had to add a wait helper because motor wouldnt visibly stop at each desired angle
+    # m1.wait(); m2.wait()        # had to add a wait helper because motor wouldnt visibly stop at each desired angle
 
     m1.goAngle(90);    m1.wait(0.01)
     m1.goAngle(-45);   m1.wait(0.01)
