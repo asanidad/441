@@ -36,23 +36,10 @@ def main():
 
     print("Running lab sequence with simultaneous operation… (CTRL+C to stop)")
     try:
-        # ---- TEMP CALIBRATION (run once) ----
-        print("Calibrating: four consecutive 90° moves on M1 (M2 holds)…")
-        m1.zero(); m2.zero()
-        for i in range(4):
-            # keep M2 target unchanged so both still tick together
-            m1.set_target(m1.angle.value + 90)   # +90 each time → total 360
-            m2.set_target(m2.angle.value)        # hold M2 position
-            ctrl.run_until_all_reached([m1, m2])
-            time.sleep(0.3)
-        print("Did M1 complete ~one full revolution? If not, adjust STEPS_PER_REV.")
-        # ---- END TEMP ----
-
-
         # The sequence from the prompt:
         # m1.zero(); m2.zero(); (already done above)
         # m1.goAngle(90)
-        """
+        
         m1.set_target(90)         # change ONLY m1 target
         # keep both in the scheduler so they step on the same cadence
         run_until_reached(ctrl, m1, m2)
@@ -80,7 +67,6 @@ def main():
         # m1.goAngle(0)
         m1.set_target(0)
         run_until_reached(ctrl, m1, m2)
-        """
 
         print("Sequence complete.")
     except KeyboardInterrupt:
