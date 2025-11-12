@@ -8,7 +8,6 @@
 import RPi.GPIO as GPIO
 import time
 import multiprocessing
-import math
 from shifter import Shifter   # our custom Shifter class
 
 class Stepper:
@@ -97,11 +96,8 @@ class Stepper:
     import math
 
     def goAngle(self, target_angle):
-        # Move to the absolute target angle from original zero (shortest path)
-        with self.angle.get_lock():
-            current = self.angle.value
-        delta = math.remainder(float(target_angle) - current, 360.0)
-        self.rotate(delta)
+        # Always rotate target degrees from original zero position
+        self.rotate(target_angle)
 
     # Set the motor zero point
     def zero(self):     # set shared angle for this motor to 0
