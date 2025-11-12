@@ -1,4 +1,4 @@
-# lab8.py — ENME441 Lab 8: Stepper Motor Control (simultaneous + slowed)
+# lab8.py — ENME441 Lab 8: Stepper Motor Control (simultaneous + slowed + invert flags)
 # Uses professor's shifter via shim_shifter (bit-reversal wrapper).
 
 from shim_shifter import Shifter                    # wrapper around prof's shifter.py
@@ -17,6 +17,11 @@ LATCH_PIN = 20   # ST_CP (latch)
 STEPS_PER_REV = 2048   # 28BYJ-48 full-step via ULN2003; use 4096 if you switch to half-step
 STEP_DELAY    = 0.012  # slower = more visible (10–15 ms is safe)
 
+# ---------- direction config ----------
+# If a motor turns the opposite of what you expect, flip its invert flag.
+INVERT_M1 = True    # set True/False to make “-90” be CCW or CW as you intend
+INVERT_M2 = True
+
 def run_until_reached(ctrl, m1, m2, dwell=0.4):
     ctrl.run_until_all_reached([m1, m2])
     if dwell > 0:
@@ -27,14 +32,14 @@ def main():
     ctrl = SyncController(s)
 
     # Two steppers on one 74HC595: low nibble = M1 (Q0..Q3), high nibble = M2 (Q4..Q7)
-    m1 = Stepper(nibble='low',  steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY)
-    m2 = Stepper(nibble='high', steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY)
+    m1 = Stepper(nibble='low',  steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY, invert=INVERT_M1)
+    m2 = Stepper(nibble='high', steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY, invert=INVERT_M2)
 
     print("Zeroing both...")
     m1.zero(); m2.zero()
     run_until_reached(ctrl, m1, m2)
 
-    print("Running lab sequence with simultaneous timing...")
+    print("Running lab sequence (absolute angles, shortest path) with simultaneous timing...")
     try:
         # EXACT PROMPT SEQUENCE, keeping both motors in the scheduler each time
         # m1.zero(); m2.zero();  (already done)

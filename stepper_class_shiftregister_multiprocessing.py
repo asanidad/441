@@ -1,5 +1,5 @@
 # stepper_class_shiftregister_multiprocessing.py
-# Integer-step Stepper (low or high nibble of 74HC595) + SyncController.
+# Integer-step Stepper (low/high nibble of 74HC595) + SyncController, with invert flag.
 
 import time
 from multiprocessing import Value
@@ -7,17 +7,21 @@ from multiprocessing import Value
 class Stepper:
     """
     Full-step 4-phase stepper tied to either the low or high nibble of the 74HC595.
-    Tracks position in *integer steps* (no float drift). Angle is derived for display.
+    Tracks position in integer steps (no float drift). Angle is derived for display.
     nibble: 'low'  -> Q0..Q3
             'high' -> Q4..Q7
+    invert: True reverses the motor direction (software flip)
     """
-    _seq = (0b0001, 0b0010, 0b0100, 0b1000)   # ABCD
+    _seq     = (0b0001, 0b0010, 0b0100, 0b1000)     # A, B, C, D
+    _seq_inv = tuple(reversed(_seq))                # D, C, B, A
 
-    def __init__(self, nibble: str, steps_per_rev: int = 2048, step_delay: float = 0.012):
+    def __init__(self, nibble: str, steps_per_rev: int = 2048, step_delay: float = 0.012,
+                 invert: bool = False):
         assert nibble in ('low', 'high')
         self.nibble = nibble
         self.steps_per_rev = int(steps_per_rev)
         self.step_delay = float(step_delay)
+        self.invert = bool(invert)
 
         # integer step state
         self.step_pos = 0          # absolute step index
@@ -32,7 +36,8 @@ class Stepper:
         return self.step_pos & 0x3  # % 4
 
     def coil_mask_now(self) -> int:
-        nib = Stepper._seq[self._phase_index()]
+        # choose forward or reversed coil sequence
+        nib = (Stepper._seq_inv if self.invert else Stepper._seq)[self._phase_index()]
         return (nib if self.nibble == 'low' else (nib << 4)) & 0xFF
 
     def _update_angle_view(self):
