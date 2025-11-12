@@ -94,11 +94,11 @@ class Stepper:
             cmd, val = self.queue.get()   # ("rel", delta) or ("abs", target)
             if cmd == "rel":
                 self.__rotate(val)
-        else:  # "abs"
-            with self.angle.get_lock():
-                current = self.angle.value
-            delta = _shortest_delta(current, val)
-            self.__rotate(delta)
+            else:  # "abs"
+                with self.angle.get_lock():
+                    current = self.angle.value
+                delta = _shortest_delta(current, val)
+                self.__rotate(delta)
 
             
     # Move relative angle from current position:
