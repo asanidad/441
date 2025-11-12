@@ -11,8 +11,8 @@ SER_PIN   = 16   # DS
 LATCH_PIN = 20   # ST_CP
 CLOCK_PIN = 21   # SH_CP
 
-# tweak for speed/visibility (bigger = slower)
-STEP_DELAY = 0.010      # seconds per step (try 0.015–0.020 if you want slower)
+STEPS_PER_REV = 2048   # 28BYJ-48 full-step (AB→BC→CD→DA) via ULN2003
+STEP_DELAY    = 0.010  # 10 ms between steps (safe speed)
 
 def run_until_reached(ctrl, m1, m2, dwell=0.4):
     """Drive both motors until both have reached their current targets."""
@@ -26,8 +26,8 @@ def main():
     ctrl = SyncController(s)
 
     # Two steppers on the same 74HC595 (Q0..Q3 = m1, Q4..Q7 = m2)
-    m1 = Stepper(nibble='low',  steps_per_rev=200, step_delay=STEP_DELAY)
-    m2 = Stepper(nibble='high', steps_per_rev=200, step_delay=STEP_DELAY)
+    m1 = Stepper(nibble='low',  steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY)
+    m2 = Stepper(nibble='high', steps_per_rev=STEPS_PER_REV, step_delay=STEP_DELAY)
 
     print("Zeroing both motors…")
     m1.zero()
@@ -36,9 +36,16 @@ def main():
 
     print("Running lab sequence with simultaneous operation… (CTRL+C to stop)")
     try:
+        print("Calibrating one full turn on M1...")
+        m1.set_target(360)                 # ask for 360 degrees on Motor 1
+        m2.set_target(0)                   # keep Motor 2 still
+        ctrl.run_until_all_reached([m1, m2])
+        print("Done. Did M1 turn exactly 360°?")
+
         # The sequence from the prompt:
         # m1.zero(); m2.zero(); (already done above)
         # m1.goAngle(90)
+        """
         m1.set_target(90)         # change ONLY m1 target
         # keep both in the scheduler so they step on the same cadence
         run_until_reached(ctrl, m1, m2)
@@ -66,6 +73,7 @@ def main():
         # m1.goAngle(0)
         m1.set_target(0)
         run_until_reached(ctrl, m1, m2)
+        """
 
         print("Sequence complete.")
     except KeyboardInterrupt:
