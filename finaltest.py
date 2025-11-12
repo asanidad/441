@@ -166,6 +166,6 @@ if __name__ == '__main__':
     
     finally:
         s.shiftByte(0)      # clear outputs
-        time.sleep(0.1)
+        time.sleep(0.9)
         GPIO.cleanup()
         print('\nend')
